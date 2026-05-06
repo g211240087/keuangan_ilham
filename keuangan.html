@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Keuangan Pro - Secure Rolling Limit</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        :root { --primary: #27ae60; --danger: #e74c3c; --dark: #2c3e50; --light: #f4f7f6; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--light); margin: 0; padding: 0; }
+        
+        /* Layar Kunci (PIN) */
+        #pinOverlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+            background: var(--dark); display: flex; flex-direction: column;
+            justify-content: center; align-items: center; z-index: 9999; color: white;
+        }
+        .pin-box { background: rgba(255,255,255,0.1); padding: 30px; border-radius: 20px; text-align: center; }
+        .pin-input { font-size: 28px; text-align: center; padding: 10px; width: 180px; border-radius: 10px; border: none; margin: 15px 0; letter-spacing: 8px; }
+        
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 15px; box-shadow: 0 10px 25px rgba(0,0,0,0.1); margin-top: 20px; }
+        .balance-card { background: var(--dark); color: white; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; }
+        .rolling-card { background: #e3f2fd; border-left: 6px solid #2196f3; padding: 15px; border-radius: 10px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+        
+        input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; margin-bottom: 10px; }
+        .btn { padding: 12px; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 5px; }
+        .btn-add { background: var(--primary); font-size: 16px; }
+        .search-box { background: #f1f8e9; border: 1px solid #c5e1a5; padding: 15px; border-radius: 10px; margin: 20px 0; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
+        table th { background: #eee; padding: 10px; text-align: left; }
+        table td { padding: 10px; border-bottom: 1px solid #eee; }
+        .status-warn { color: var(--danger); font-weight: bold; }
+        .status-safe { color: var(--primary); font-weight: bold; }
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+
+<!-- Layar Login PIN -->
+<div id="pinOverlay">
+    <div class="pin-box">
+        <h2 id="pinTitle">🔒 Keuangan Pro</h2>
+        <p id="pinMsg">Masukan PIN untuk mengakses data</p>
+        <input type="password" id="inputPin" class="pin-input" maxlength="6" placeholder="******">
+        <button class="btn" style="background: var(--primary);" onclick="verifyPin()">Masuk</button>
+    </div>
+</div>
+
+<!-- Aplikasi Utama -->
+<div class="container hidden" id="mainApp">
+    <div class="balance-card">
+        <h1>ILHAM HUDALLAH</h1>
+        <small>TOTAL SALDO SAYA</small>
+        <h1 id="totalBalanceDisplay">Rp 0</h1>
+    </div>
+
+    <!-- Sistem Rolling Limit -->
+    <div class="rolling-card">
+        <div>
+            <small><b>JATAH HARIAN POKOK</b></small><br>
+            <input type="text" id="baseLimitInput" placeholder="20.000" oninput="formatCurrency(this, 'realBaseLimit')" style="width: 140px; margin-top:5px; padding:5px;">
+            <input type="hidden" id="realBaseLimit" value="0">
+        </div>
+        <div style="text-align: right;">
+            <small>SISA JATAH HARI INI:</small><br>
+            <h2 id="rollingDisplay" style="margin:0;">Rp 0</h2>
+        </div>
+    </div>
+
+    <input type="hidden" id="editIndex">
+    <div style="display: flex; gap: 5px;">
+        <select id="type" style="flex: 1;" onchange="updateCategoryOptions()">
+            <option value="expense">Keluar (-)</option>
+            <option value="income">Masuk (+)</option>
+        </select>
+        <input type="text" id="displayAmount" placeholder="Nominal Rp" style="flex: 2;" oninput="formatCurrency(this, 'realAmount')">
+        <input type="hidden" id="realAmount">
+        <input type="date" id="transDate" style="flex: 1.5;">
+    </div>
+
+    <div style="display: flex; gap: 5px;">
+        <select id="category" style="flex: 1;"></select>
+        <select id="wallet" style="flex: 1;">
+            <option value="BCA">BCA</option>
+            <option value="BRI">BRI</option>
+            <option value="Dana">Dana</option>
+            <option value="Seabank">Seabank</option>
+            <option value="Tunai">Tunai</option>
+        </select>
+    </div>
+    
+    <textarea id="note" placeholder="Catatan tambahan..." rows="1"></textarea>
+    <button class="btn btn-add" id="saveBtn" onclick="saveTransaction()">Simpan Transaksi</button>
+
+    <div style="height: 180px; margin: 20px 0;"><canvas id="financeChart"></canvas></div>
+
+    <div class="search-box">
+        <input type="text" id="searchText" placeholder="Cari tanggal, kategori, atau catatan..." onkeyup="render()">
+    </div>
+
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Tanggal</th>
+                    <th>Detail</th>
+                    <th>Nominal</th>
+                    <th>Aksi</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody"></tbody>
+        </table>
+    </div>
+
+    <button class="btn" style="background: #1f6f43; margin-top: 20px;" onclick="exportToExcel()">Download Excel (.xlsx)</button>
+</div>
+
+<script>
+    let transactions = JSON.parse(localStorage.getItem('transactions')) || [];
+    let appPin = localStorage.getItem('appPin');
+    let myChart;
+
+    // --- FITUR PIN ---
+    window.onload = () => {
+        if (!appPin) {
+            document.getElementById('pinTitle').innerText = "Set PIN Baru";
+            document.getElementById('pinMsg').innerText = "Buat 6 digit PIN keamanan anda";
+        }
+    };
+
+    function verifyPin() {
+        const input = document.getElementById('inputPin').value;
+        if (!appPin) {
+            if (input.length < 4) return alert("PIN minimal 4 angka!");
+            localStorage.setItem('appPin', input);
+            alert("PIN disimpan! Silakan masuk kembali.");
+            location.reload();
+        } else {
+            if (input === appPin) {
+                document.getElementById('pinOverlay').classList.add('hidden');
+                document.getElementById('mainApp').classList.remove('hidden');
+                updateCategoryOptions();
+                render();
+            } else {
+                alert("PIN Salah!");
+                document.getElementById('inputPin').value = "";
+            }
+        }
+    }
+
+    // --- LOGIKA TRANSAKSI ---
+    const categories = {
+        income: ["Gaji", "Bonus", "Investasi", "Lainnya"],
+        expense: ["Makan", "Transport", "Hiburan", "Bulanan", "Perawatan", "Kesehatan", "Kendaraan", "Lainnya"]
+    };
+
+    document.getElementById('transDate').valueAsDate = new Date();
+
+    function formatCurrency(input, hiddenId) {
+        let value = input.value.replace(/\D/g, "");
+        document.getElementById(hiddenId).value = value;
+        input.value = value.replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        if(hiddenId === 'realBaseLimit') render(); 
+    }
+
+    function updateCategoryOptions() {
+        const type = document.getElementById('type').value;
+        document.getElementById('category').innerHTML = categories[type].map(c => `<option value="${c}">${c}</option>`).join('');
+    }
+
+    function saveTransaction() {
+        const amount = parseFloat(document.getElementById('realAmount').value);
+        const date = document.getElementById('transDate').value;
+        if (!amount || !date) return alert("Mohon isi nominal!");
+
+        const data = { 
+            type: document.getElementById('type').value, 
+            amount, 
+            category: document.getElementById('category').value, 
+            wallet: document.getElementById('wallet').value, 
+            date, 
+            note: document.getElementById('note').value || "-" 
+        };
+
+        const editIndex = document.getElementById('editIndex').value;
+        if (editIndex === "") transactions.push(data);
+        else {
+            transactions[editIndex] = data;
+            document.getElementById('editIndex').value = "";
+            document.getElementById('saveBtn').innerText = "Simpan Transaksi";
+        }
+
+        localStorage.setItem('transactions', JSON.stringify(transactions));
+        document.getElementById('displayAmount').value = '';
+        document.getElementById('realAmount').value = '';
+        document.getElementById('note').value = '';
+        render();
+    }
+
+    function calculateRollingLimit() {
+        const base = parseFloat(document.getElementById('realBaseLimit').value) || 0;
+        if (base === 0 || transactions.length === 0) return base;
+
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        let firstDate = new Date(Math.min(...transactions.map(t => new Date(t.date))));
+        firstDate.setHours(0,0,0,0);
+
+        let totalDays = Math.floor((today - firstDate) / (1000 * 60 * 60 * 24)) + 1;
+        let totalJatah = totalDays * base;
+        let totalPengeluaran = transactions
+            .filter(t => t.type === 'expense' && new Date(t.date) <= today)
+            .reduce((s, t) => s + t.amount, 0);
+
+        return totalJatah - totalPengeluaran;
+    }
+
+    function render() {
+        const tbody = document.getElementById('tableBody');
+        const search = document.getElementById('searchText').value.toLowerCase();
+        tbody.innerHTML = '';
+        let inc = 0, exp = 0;
+
+        transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach((t, i) => {
+            if (t.type === 'income') inc += t.amount; else exp += t.amount;
+            if (t.date.includes(search) || t.category.toLowerCase().includes(search) || t.note.toLowerCase().includes(search)) {
+                tbody.innerHTML += `<tr>
+                    <td><small>${t.date}</small></td>
+                    <td><b>${t.category}</b> <small>(${t.wallet})</small><br><small>${t.note}</small></td>
+                    <td style="color:${t.type==='income'?'green':'red'}">
+                        ${t.type==='income'?'+':'-'} ${t.amount.toLocaleString('id-ID')}
+                    </td>
+                    <td>
+                        <button onclick="editRow(${i})" style="background:#3498db; color:white; border:none; border-radius:4px; padding:3px 5px;">✎</button>
+                        <button onclick="deleteRow(${i})" style="background:#e74c3c; color:white; border:none; border-radius:4px; padding:3px 5px;">X</button>
+                    </td>
+                </tr>`;
+            }
+        });
+
+        const rolling = calculateRollingLimit();
+        const rollDisp = document.getElementById('rollingDisplay');
+        rollDisp.innerText = "Rp " + rolling.toLocaleString('id-ID');
+        rollDisp.className = rolling < 0 ? 'status-warn' : 'status-safe';
+        
+        document.getElementById('totalBalanceDisplay').innerText = 'Rp ' + (inc - exp).toLocaleString('id-ID');
+        updateChart(inc, exp);
+    }
+
+    function updateChart(i, e) {
+        const ctx = document.getElementById('financeChart').getContext('2d');
+        if (myChart) myChart.destroy();
+        myChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: ['Masuk', 'Keluar'],
+                datasets: [{ data: [i, e], backgroundColor: ['#27ae60', '#e74c3c'], borderRadius: 5 }]
+            },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
+        });
+    }
+
+    function deleteRow(i) { if(confirm("Hapus data ini?")) { transactions.splice(i, 1); localStorage.setItem('transactions', JSON.stringify(transactions)); render(); } }
+
+    function editRow(i) {
+        const t = transactions[i];
+        document.getElementById('type').value = t.type;
+        updateCategoryOptions();
+        document.getElementById('displayAmount').value = t.amount.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        document.getElementById('realAmount').value = t.amount;
+        document.getElementById('category').value = t.category;
+        document.getElementById('wallet').value = t.wallet;
+        document.getElementById('transDate').value = t.date;
+        document.getElementById('note').value = t.note;
+        document.getElementById('editIndex').value = i;
+        document.getElementById('saveBtn').innerText = "Update Transaksi";
+        window.scrollTo(0,0);
+    }
+
+    function exportToExcel() {
+        const ws = XLSX.utils.json_to_sheet(transactions);
+        const wb = XLSX.utils.book_new();
+        XLSX.utils.book_append_sheet(wb, ws, "Data");
+        XLSX.writeFile(wb, "KeuanganPro_Secure.xlsx");
+    }
+</script>
+</body>
+</html>
