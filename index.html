@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KEUANGAN ILHAM HUDALLAH</title>
+    <title>Keuangan Pro - Secure Rolling Limit</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
     <style>
@@ -41,7 +41,7 @@
 
 <div id="pinOverlay">
     <div class="pin-box">
-        <h2 id="pinTitle">🔒 Keuangan Ilham Hudallah</h2>
+        <h2 id="pinTitle">🔒 Keuangan Pro</h2>
         <p id="pinMsg">Masukan PIN untuk mengakses data</p>
         <input type="password" id="inputPin" class="pin-input" maxlength="6" placeholder="******">
         <button class="btn" style="background: var(--primary);" onclick="verifyPin()">Masuk</button>
@@ -226,7 +226,15 @@
         tbody.innerHTML = '';
         let totalInc = 0, totalExp = 0, searchInc = 0, searchExp = 0;
 
-        const sortedTransactions = [...transactions].sort((a, b) => b.id - a.id);
+        // PERBAIKAN LOGIKA URUTAN:
+        // 1. Urutkan berdasarkan Tanggal (Besar ke Kecil)
+        // 2. Jika tanggal sama, urutkan berdasarkan ID/Waktu Input (Besar ke Kecil)
+        const sortedTransactions = [...transactions].sort((a, b) => {
+            if (b.date !== a.date) {
+                return new Date(b.date) - new Date(a.date);
+            }
+            return b.id - a.id;
+        });
 
         sortedTransactions.forEach((t) => {
             if (t.type === 'income') totalInc += t.amount; else totalExp += t.amount;
