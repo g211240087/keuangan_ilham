@@ -10,7 +10,6 @@
         :root { --primary: #27ae60; --danger: #e74c3c; --dark: #2c3e50; --light: #f4f7f6; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--light); margin: 0; padding: 0; }
         
-        /* Layar Kunci (PIN) */
         #pinOverlay {
             position: fixed; top: 0; left: 0; width: 100%; height: 100%;
             background: var(--dark); display: flex; flex-direction: column;
@@ -26,7 +25,9 @@
         input, select, textarea { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; margin-bottom: 10px; }
         .btn { padding: 12px; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; width: 100%; margin-top: 5px; }
         .btn-add { background: var(--primary); font-size: 16px; }
+        
         .search-box { background: #f1f8e9; border: 1px solid #c5e1a5; padding: 15px; border-radius: 10px; margin: 20px 0; }
+        .search-summary { display: flex; justify-content: space-between; margin-top: 10px; font-weight: bold; font-size: 14px; color: var(--dark); border-top: 1px dashed #ccc; padding-top: 10px; }
         
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 12px; }
         table th { background: #eee; padding: 10px; text-align: left; }
@@ -38,7 +39,6 @@
 </head>
 <body>
 
-<!-- Layar Login PIN -->
 <div id="pinOverlay">
     <div class="pin-box">
         <h2 id="pinTitle">🔒 Keuangan Pro</h2>
@@ -48,7 +48,6 @@
     </div>
 </div>
 
-<!-- Aplikasi Utama -->
 <div class="container hidden" id="mainApp">
     <div class="balance-card">
         <h1>ILHAM HUDALLAH</h1>
@@ -56,7 +55,6 @@
         <h1 id="totalBalanceDisplay">Rp 0</h1>
     </div>
 
-    <!-- Sistem Rolling Limit -->
     <div class="rolling-card">
         <div>
             <small><b>JATAH HARIAN POKOK</b></small><br>
@@ -97,7 +95,11 @@
     <div style="height: 180px; margin: 20px 0;"><canvas id="financeChart"></canvas></div>
 
     <div class="search-box">
-        <input type="text" id="searchText" placeholder="Cari tanggal, kategori, atau catatan..." onkeyup="render()">
+        <input type="text" id="searchText" placeholder="Cari tanggal, kategori, wallet, atau catatan..." onkeyup="render()">
+        <div class="search-summary" id="searchSummary">
+            <span>Masuk: <span id="sumIncome" style="color:green">0</span></span>
+            <span>Keluar: <span id="sumExpense" style="color:red">0</span></span>
+        </div>
     </div>
 
     <div style="overflow-x: auto;">
@@ -122,8 +124,16 @@
     let appPin = localStorage.getItem('appPin');
     let myChart;
 
-    // --- FITUR PIN ---
+    // Fungsi baru untuk memasukkan tanggal hari ini berdasarkan waktu lokal (menghindari bug zona waktu)
+    function setTodayDate() {
+        const today = new Date();
+        const offset = today.getTimezoneOffset();
+        const localDate = new Date(today.getTime() - (offset * 60 * 1000));
+        document.getElementById('transDate').value = localDate.toISOString().split('T')[0];
+    }
+
     window.onload = () => {
+        setTodayDate(); // Set tanggal hari ini secara lokal saat web dibuka
         if (!appPin) {
             document.getElementById('pinTitle').innerText = "Set PIN Baru";
             document.getElementById('pinMsg').innerText = "Buat 6 digit PIN keamanan anda";
@@ -135,7 +145,6 @@
         if (!appPin) {
             if (input.length < 4) return alert("PIN minimal 4 angka!");
             localStorage.setItem('appPin', input);
-            alert("PIN disimpan! Silakan masuk kembali.");
             location.reload();
         } else {
             if (input === appPin) {
@@ -150,13 +159,10 @@
         }
     }
 
-    // --- LOGIKA TRANSAKSI ---
     const categories = {
         income: ["Gaji", "Bonus", "Investasi", "Lainnya"],
         expense: ["Makan", "Transport", "Hiburan", "Bulanan", "Perawatan", "Kesehatan", "Kendaraan", "Lainnya"]
     };
-
-    document.getElementById('transDate').valueAsDate = new Date();
 
     function formatCurrency(input, hiddenId) {
         let value = input.value.replace(/\D/g, "");
@@ -176,6 +182,7 @@
         if (!amount || !date) return alert("Mohon isi nominal!");
 
         const data = { 
+            id: Date.now(), 
             type: document.getElementById('type').value, 
             amount, 
             category: document.getElementById('category').value, 
@@ -185,9 +192,10 @@
         };
 
         const editIndex = document.getElementById('editIndex').value;
-        if (editIndex === "") transactions.push(data);
-        else {
-            transactions[editIndex] = data;
+        if (editIndex === "") {
+            transactions.push(data);
+        } else {
+            transactions[editIndex] = {...transactions[editIndex], ...data, id: transactions[editIndex].id};
             document.getElementById('editIndex').value = "";
             document.getElementById('saveBtn').innerText = "Simpan Transaksi";
         }
@@ -196,24 +204,19 @@
         document.getElementById('displayAmount').value = '';
         document.getElementById('realAmount').value = '';
         document.getElementById('note').value = '';
+        setTodayDate(); // Reset tanggal ke tanggal hari ini secara lokal setelah input data
         render();
     }
 
     function calculateRollingLimit() {
         const base = parseFloat(document.getElementById('realBaseLimit').value) || 0;
         if (base === 0 || transactions.length === 0) return base;
-
-        const today = new Date();
-        today.setHours(0,0,0,0);
+        const today = new Date(); today.setHours(0,0,0,0);
         let firstDate = new Date(Math.min(...transactions.map(t => new Date(t.date))));
         firstDate.setHours(0,0,0,0);
-
         let totalDays = Math.floor((today - firstDate) / (1000 * 60 * 60 * 24)) + 1;
         let totalJatah = totalDays * base;
-        let totalPengeluaran = transactions
-            .filter(t => t.type === 'expense' && new Date(t.date) <= today)
-            .reduce((s, t) => s + t.amount, 0);
-
+        let totalPengeluaran = transactions.filter(t => t.type === 'expense' && new Date(t.date) <= today).reduce((s, t) => s + t.amount, 0);
         return totalJatah - totalPengeluaran;
     }
 
@@ -221,32 +224,34 @@
         const tbody = document.getElementById('tableBody');
         const search = document.getElementById('searchText').value.toLowerCase();
         tbody.innerHTML = '';
-        let inc = 0, exp = 0;
+        let totalInc = 0, totalExp = 0, searchInc = 0, searchExp = 0;
 
-        transactions.sort((a,b) => new Date(b.date) - new Date(a.date)).forEach((t, i) => {
-            if (t.type === 'income') inc += t.amount; else exp += t.amount;
-            if (t.date.includes(search) || t.category.toLowerCase().includes(search) || t.note.toLowerCase().includes(search)) {
+        const sortedTransactions = [...transactions].sort((a, b) => b.id - a.id);
+
+        sortedTransactions.forEach((t) => {
+            if (t.type === 'income') totalInc += t.amount; else totalExp += t.amount;
+            const matchSearch = t.date.includes(search) || t.category.toLowerCase().includes(search) || t.wallet.toLowerCase().includes(search) || t.note.toLowerCase().includes(search);
+
+            if (matchSearch) {
+                if (t.type === 'income') searchInc += t.amount; else searchExp += t.amount;
+                const originalIndex = transactions.findIndex(item => item.id === t.id);
                 tbody.innerHTML += `<tr>
                     <td><small>${t.date}</small></td>
                     <td><b>${t.category}</b> <small>(${t.wallet})</small><br><small>${t.note}</small></td>
-                    <td style="color:${t.type==='income'?'green':'red'}">
-                        ${t.type==='income'?'+':'-'} ${t.amount.toLocaleString('id-ID')}
-                    </td>
+                    <td style="color:${t.type==='income'?'green':'red'}">${t.type==='income'?'+':'-'} ${t.amount.toLocaleString('id-ID')}</td>
                     <td>
-                        <button onclick="editRow(${i})" style="background:#3498db; color:white; border:none; border-radius:4px; padding:3px 5px;">✎</button>
-                        <button onclick="deleteRow(${i})" style="background:#e74c3c; color:white; border:none; border-radius:4px; padding:3px 5px;">X</button>
+                        <button onclick="editRow(${originalIndex})" style="background:#3498db; color:white; border:none; border-radius:4px; padding:3px 5px;">✎</button>
+                        <button onclick="deleteRow(${originalIndex})" style="background:#e74c3c; color:white; border:none; border-radius:4px; padding:3px 5px;">X</button>
                     </td>
                 </tr>`;
             }
         });
 
-        const rolling = calculateRollingLimit();
-        const rollDisp = document.getElementById('rollingDisplay');
-        rollDisp.innerText = "Rp " + rolling.toLocaleString('id-ID');
-        rollDisp.className = rolling < 0 ? 'status-warn' : 'status-safe';
-        
-        document.getElementById('totalBalanceDisplay').innerText = 'Rp ' + (inc - exp).toLocaleString('id-ID');
-        updateChart(inc, exp);
+        document.getElementById('sumIncome').innerText = "Rp " + searchInc.toLocaleString('id-ID');
+        document.getElementById('sumExpense').innerText = "Rp " + searchExp.toLocaleString('id-ID');
+        document.getElementById('rollingDisplay').innerText = "Rp " + calculateRollingLimit().toLocaleString('id-ID');
+        document.getElementById('totalBalanceDisplay').innerText = 'Rp ' + (totalInc - totalExp).toLocaleString('id-ID');
+        updateChart(totalInc, totalExp);
     }
 
     function updateChart(i, e) {
@@ -254,16 +259,13 @@
         if (myChart) myChart.destroy();
         myChart = new Chart(ctx, {
             type: 'bar',
-            data: {
-                labels: ['Masuk', 'Keluar'],
-                datasets: [{ data: [i, e], backgroundColor: ['#27ae60', '#e74c3c'], borderRadius: 5 }]
-            },
+            data: { labels: ['Masuk', 'Keluar'], datasets: [{ data: [i, e], backgroundColor: ['#27ae60', '#e74c3c'], borderRadius: 5 }] },
             options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } } }
         });
     }
 
-    function deleteRow(i) { if(confirm("Hapus data ini?")) { transactions.splice(i, 1); localStorage.setItem('transactions', JSON.stringify(transactions)); render(); } }
-
+    function deleteRow(i) { if(confirm("Hapus?")) { transactions.splice(i, 1); localStorage.setItem('transactions', JSON.stringify(transactions)); render(); } }
+    
     function editRow(i) {
         const t = transactions[i];
         document.getElementById('type').value = t.type;
@@ -275,15 +277,22 @@
         document.getElementById('transDate').value = t.date;
         document.getElementById('note').value = t.note;
         document.getElementById('editIndex').value = i;
-        document.getElementById('saveBtn').innerText = "Update Transaksi";
+        document.getElementById('saveBtn').innerText = "Update";
         window.scrollTo(0,0);
     }
 
     function exportToExcel() {
-        const ws = XLSX.utils.json_to_sheet(transactions);
+        const reportData = [...transactions].sort((a,b) => b.id - a.id).map(t => ({
+            Tanggal: t.date, Tipe: t.type === 'income' ? 'Masuk' : 'Keluar', Kategori: t.category, Dompet: t.wallet, Nominal: t.amount, Catatan: t.note
+        }));
+        const totalInc = transactions.filter(t => t.type === 'income').reduce((s,t) => s+t.amount, 0);
+        const totalExp = transactions.filter(t => t.type === 'expense').reduce((s,t) => s+t.amount, 0);
+        reportData.push({}, { Tanggal: "TOTAL MASUK", Nominal: totalInc }, { Tanggal: "TOTAL KELUAR", Nominal: totalExp }, { Tanggal: "SALDO AKHIR", Nominal: totalInc - totalExp });
+        const ws = XLSX.utils.json_to_sheet(reportData);
+        ws['!autofilter'] = { ref: "A1:F1" };
         const wb = XLSX.utils.book_new();
-        XLSX.utils.book_append_sheet(wb, ws, "Data");
-        XLSX.writeFile(wb, "KeuanganPro_Secure.xlsx");
+        XLSX.utils.book_append_sheet(wb, ws, "Laporan");
+        XLSX.writeFile(wb, "PembukuanKantin_Secure.xlsx");
     }
 </script>
 </body>
