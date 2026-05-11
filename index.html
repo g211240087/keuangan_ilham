@@ -49,9 +49,36 @@
         table td { padding: 12px; border-bottom: 1px solid #eee; }
         
         /* Gaya Tombol Aksi Baru */
-        .btn-edit { color: var(--blue); background: none; border: none; font-size: 16px; cursor: pointer; padding: 5px; }
-        .btn-delete { color: var(--danger); background: none; border: none; font-size: 16px; cursor: pointer; padding: 5px; margin-left: 8px; }
-        
+        /* Gaya Tombol Aksi - Versi Ringkas & Horizontal */
+.btn-edit, .btn-delete { 
+    background: #f8f9fa; /* Beri background tipis agar terlihat seperti tombol */
+    border: 1px solid #eee; 
+    border-radius: 6px;
+    font-size: 14px; 
+    cursor: pointer; 
+    padding: 6px; 
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s;
+    min-width: 28px; /* Pastikan area klik tidak terlalu kecil */
+}
+
+.btn-edit { color: var(--blue); }
+.btn-delete { color: var(--danger); }
+
+/* Efek saat tombol ditekan */
+.btn-edit:active, .btn-delete:active { 
+    transform: scale(0.9); 
+    background: #e9ecef;
+}
+
+/* Memastikan kolom aksi di tabel selalu hemat ruang */
+table td:last-child {
+    white-space: nowrap; /* Kunci agar tidak tumpuk atas-bawah */
+    width: 1%; 
+    padding: 8px 5px;
+}
         
         .hidden { display: none !important; }
     </style>
@@ -135,7 +162,7 @@
 
     <div style="overflow-x: auto;">
         <table>
-            <thead><tr><th>Tgl</th><th>Detail</th><th>Nominal</th><th>Aksi</th></tr></thead>
+            <thead><tr><th>Tanggal</th><th>Detail</th><th>Nominal</th><th>Aksi</th></tr></thead>
             <tbody id="tableBody"></tbody>
         </table>
     </div>
@@ -196,59 +223,47 @@
     function setTodayDate() { document.getElementById('transDate').value = new Date().toISOString().split('T')[0]; }
 
     function saveTransaction() {
-        const amount = parseFloat(document.getElementById('realAmount').value);
-        if (!amount) return alert("Isi nominal!");
-        const data = {
-            id: Date.now(),
-            type: document.getElementById('type').value,
-            amount,
-            category: document.getElementById('category').value,
-            wallet: document.getElementById('wallet').value,
-            date: document.getElementById('transDate').value,
-            note: (document.getElementById('debtorName').value ? `[${document.getElementById('debtorName').value}] ` : "") + (document.getElementById('note').value || "-")
-        };
-        const editIdx = document.getElementById('editIndex').value;
-        if (editIdx === "") transactions.push(data);
-        else transactions[editIdx] = data;
-        localStorage.setItem('transactions', JSON.stringify(transactions));
-        resetForm();
-        render();
+    const amount = parseFloat(document.getElementById('realAmount').value);
+    const type = document.getElementById('type').value;
+    const category = document.getElementById('category').value;
+    let wallet = document.getElementById('wallet').value;
+    const date = document.getElementById('transDate').value;
+    const editIdx = document.getElementById('editIndex').value;
+    
+    if (!amount) return alert("Isi nominal!");
+
+    // --- LOGIKA OTOMATIS PINJAM/HUTANG ---
+    // Jika kategori mengandung kata 'Pinjam' atau 'Hutang', 
+    // arahkan otomatis ke dompet 'Pinjam/Hutang'
+    if (category.toLowerCase().includes("pinjam") || category.toLowerCase().includes("hutang")) {
+        wallet = "Pinjam/Hutang";
     }
 
-function saveTransaction() {
-    const amount = parseFloat(document.getElementById('realAmount').value);
-    if (!amount) return alert("Isi nominal!");
-    
-    const editIdx = document.getElementById('editIndex').value;
     const noteInput = document.getElementById('note').value;
     const debtorInput = document.getElementById('debtorName').value;
     const finalNote = debtorInput ? `[${debtorInput}] ${noteInput}` : (noteInput || "-");
 
     if (editIdx === "") {
-        // --- DATA BARU ---
-        // Gunakan ID baru agar muncul di paling atas
+        // --- PROSES DATA BARU ---
         transactions.push({
             id: Date.now(), 
-            type: document.getElementById('type').value,
-            amount,
-            category: document.getElementById('category').value,
-            wallet: document.getElementById('wallet').value,
-            date: document.getElementById('transDate').value,
+            type: type,
+            amount: amount,
+            category: category,
+            wallet: wallet,
+            date: date,
             note: finalNote
         });
     } else {
-        // --- DATA EDIT ---
-        // Ambil data lama berdasarkan index
+        // --- PROSES UPDATE (EDIT) ---
         const oldData = transactions[editIdx];
-
-        // Timpa data di index tersebut, TAPI gunakan ID lama (oldData.id)
         transactions[editIdx] = {
-            id: oldData.id, // KUNCI UTAMA: ID tidak boleh berubah
-            type: document.getElementById('type').value,
+            id: oldData.id, // Pertahankan ID asli
+            type: type,
             amount: amount,
-            category: document.getElementById('category').value,
-            wallet: document.getElementById('wallet').value,
-            date: document.getElementById('transDate').value, // Pastikan tanggal tetap atau sesuai input
+            category: category,
+            wallet: wallet,
+            date: date,
             note: finalNote
         };
     }
@@ -256,6 +271,85 @@ function saveTransaction() {
     localStorage.setItem('transactions', JSON.stringify(transactions));
     resetForm();
     render();
+}
+
+    // --- JANGAN LUPA TAMBAHKAN FUNGSI TRANSFER YANG HILANG ---
+    function executeTransfer() {
+    const from = document.getElementById('fromWallet').value;
+    const to = document.getElementById('toWallet').value;
+    const amount = parseFloat(document.getElementById('tfAmountReal').value);
+
+    if (!from || !to || !amount) return alert("Lengkapi data transfer!");
+    if (from === to) return alert("Dompet tidak boleh sama!");
+
+    const dateNow = new Date().toISOString().split('T')[0];
+
+    // Catat Keluar dari dompet asal
+    transactions.push({
+        id: Date.now(),
+        type: 'expense',
+        amount: amount,
+        category: 'Transfer Keluar',
+        wallet: from,
+        date: dateNow,
+        note: `Ke ${to}`
+    });
+
+    // Catat Masuk ke dompet tujuan
+    transactions.push({
+        id: Date.now() + 1,
+        type: 'income',
+        amount: amount,
+        category: 'Transfer Masuk',
+        wallet: to,
+        date: dateNow,
+        note: `Dari ${from}`
+    });
+
+    localStorage.setItem('transactions', JSON.stringify(transactions));
+    document.getElementById('tfAmountDisplay').value = "";
+    document.getElementById('tfAmountReal').value = "";
+    toggleTransferForm();
+    render();
+}
+    function executeTransfer() {
+    const from = document.getElementById('fromWallet').value;
+    const to = document.getElementById('toWallet').value;
+    const amount = parseFloat(document.getElementById('tfAmountReal').value);
+
+    if (!from || !to || !amount) return alert("Lengkapi data transfer!");
+    if (from === to) return alert("Dompet asal dan tujuan tidak boleh sama!");
+
+    // 1. Catat Transaksi Keluar dari Dompet Asal
+    transactions.push({
+        id: Date.now(),
+        type: 'expense',
+        amount: amount,
+        category: 'Transfer',
+        wallet: from,
+        date: new Date().toISOString().split('T')[0],
+        note: `Transfer ke ${to}`
+    });
+
+    // 2. Catat Transaksi Masuk ke Dompet Tujuan
+    transactions.push({
+        id: Date.now() + 1, // Beri jeda ID agar unik
+        type: 'income',
+        amount: amount,
+        category: 'Transfer',
+        wallet: to,
+        date: new Date().toISOString().split('T')[0],
+        note: `Terima dari ${from}`
+    });
+
+    localStorage.setItem('transactions', JSON.stringify(transactions));
+    
+    // Reset Form & Tutup
+    document.getElementById('tfAmountDisplay').value = '';
+    document.getElementById('tfAmountReal').value = '';
+    toggleTransferForm();
+    render();
+    alert("Transfer Berhasil!");
 }
 
     function resetAllData() { if(confirm("Hapus semua data?")) { localStorage.removeItem('transactions'); transactions = []; render(); } }
