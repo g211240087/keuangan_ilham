@@ -51,7 +51,8 @@
         /* Gaya Tombol Aksi Baru */
         .btn-edit { color: var(--blue); background: none; border: none; font-size: 16px; cursor: pointer; padding: 5px; }
         .btn-delete { color: var(--danger); background: none; border: none; font-size: 16px; cursor: pointer; padding: 5px; margin-left: 8px; }
-
+        
+        
         .hidden { display: none !important; }
     </style>
 </head>
@@ -134,7 +135,7 @@
 
     <div style="overflow-x: auto;">
         <table>
-            <thead><tr><th>Tanggal</th><th>Detail</th><th>Nominal</th><th>Aksi</th></tr></thead>
+            <thead><tr><th>Tgl</th><th>Detail</th><th>Nominal</th><th>Aksi</th></tr></thead>
             <tbody id="tableBody"></tbody>
         </table>
     </div>
@@ -214,19 +215,48 @@
         render();
     }
 
-    function executeTransfer() {
-        const from = document.getElementById('fromWallet').value;
-        const to = document.getElementById('toWallet').value;
-        const amount = parseFloat(document.getElementById('tfAmountReal').value);
-        if (!from || !to || !amount || from === to) return alert("Input tidak valid!");
-        const date = document.getElementById('transDate').value;
-        transactions.push({ id: Date.now(), type: 'expense', amount, category: 'Transfer', wallet: from, date, note: `Ke ${to}` });
-        transactions.push({ id: Date.now()+1, type: 'income', amount, category: 'Transfer', wallet: to, date, note: `Dari ${from}` });
-        localStorage.setItem('transactions', JSON.stringify(transactions));
-        document.getElementById('tfAmountDisplay').value = "";
-        toggleTransferForm();
-        render();
+function saveTransaction() {
+    const amount = parseFloat(document.getElementById('realAmount').value);
+    if (!amount) return alert("Isi nominal!");
+    
+    const editIdx = document.getElementById('editIndex').value;
+    const noteInput = document.getElementById('note').value;
+    const debtorInput = document.getElementById('debtorName').value;
+    const finalNote = debtorInput ? `[${debtorInput}] ${noteInput}` : (noteInput || "-");
+
+    if (editIdx === "") {
+        // --- DATA BARU ---
+        // Gunakan ID baru agar muncul di paling atas
+        transactions.push({
+            id: Date.now(), 
+            type: document.getElementById('type').value,
+            amount,
+            category: document.getElementById('category').value,
+            wallet: document.getElementById('wallet').value,
+            date: document.getElementById('transDate').value,
+            note: finalNote
+        });
+    } else {
+        // --- DATA EDIT ---
+        // Ambil data lama berdasarkan index
+        const oldData = transactions[editIdx];
+
+        // Timpa data di index tersebut, TAPI gunakan ID lama (oldData.id)
+        transactions[editIdx] = {
+            id: oldData.id, // KUNCI UTAMA: ID tidak boleh berubah
+            type: document.getElementById('type').value,
+            amount: amount,
+            category: document.getElementById('category').value,
+            wallet: document.getElementById('wallet').value,
+            date: document.getElementById('transDate').value, // Pastikan tanggal tetap atau sesuai input
+            note: finalNote
+        };
     }
+
+    localStorage.setItem('transactions', JSON.stringify(transactions));
+    resetForm();
+    render();
+}
 
     function resetAllData() { if(confirm("Hapus semua data?")) { localStorage.removeItem('transactions'); transactions = []; render(); } }
     function deleteRow(idx) { if(confirm("Hapus transaksi ini?")) { transactions.splice(idx, 1); localStorage.setItem('transactions', JSON.stringify(transactions)); render(); } }
@@ -270,19 +300,25 @@
                 
                 // Format Tanggal dengan Tahun
                 const d = new Date(t.date);
-                const formattedDate = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                // Mengambil 2 angka terakhir dari tahun
+                const shortYear = String(d.getFullYear()).slice(-2); 
+                const formattedDate = `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}/${shortYear}`;
 
-                tbody.innerHTML += `<tr>
-                    <td><small>${formattedDate}</small></td>
-                    <td><b>${t.category}</b><br><small>${t.note}</small></td>
-                    <td style="color:${t.type==='income'?'green':'red'}">
-                        ${t.type==='income'?'+':'-'} ${t.amount.toLocaleString('id-ID')}
-                    </td>
-                    <td>
-                        <button onclick="editRow(${idx})" class="btn-edit" title="Edit">✎</button>
-                        <button onclick="deleteRow(${idx})" class="btn-delete" title="Hapus">✖</button>
-                    </td>
-                </tr>`;
+               tbody.innerHTML += `<tr>
+                <td><span class="date-text">${formattedDate}</span></td> <!-- Tanggal Kecil & Singkat -->
+                <td>
+                    <b>${t.category} </b>${t.wallet}<br>
+                    
+                    <small style="display:block; color:#888; font-size:9px">${t.note}</small>
+                </td>
+                <td style="color:${t.type==='income'?'green':'red'}; font-weight:bold; white-space:nowrap">
+                    ${t.type==='income'?'+':'-'}${t.amount.toLocaleString('id-ID')}
+                </td>
+                <td>
+                    <button onclick="editRow(${idx})" class="btn-edit" title="Edit">✎</button>
+                    <button onclick="deleteRow(${idx})" class="btn-delete" title="Hapus">✖</button>
+                </td>
+            </tr>`;
             }
         });
 
@@ -315,18 +351,37 @@
     }
 
     function editRow(i) {
+        // 1. Ambil data dari array berdasarkan index
         const t = transactions[i];
+
+        // 2. Isi semua input dengan data yang sudah ada (Saran Data Lama)
         document.getElementById('type').value = t.type;
-        updateCategoryOptions();
+        updateCategoryOptions(); // Pastikan kategori menyesuaikan tipe (In/Out)
+        
         document.getElementById('category').value = t.category;
         document.getElementById('wallet').value = t.wallet;
         document.getElementById('transDate').value = t.date;
         document.getElementById('realAmount').value = t.amount;
         document.getElementById('displayAmount').value = t.amount.toLocaleString('id-ID');
+        
+        // 3. Logika untuk memisahkan Nama Debtur dan Catatan agar muncul di kotaknya masing-masing
+        if (t.note.includes("[") && t.note.includes("]")) {
+            const parts = t.note.split("] ");
+            document.getElementById('debtorName').value = parts[0].replace("[", "");
+            document.getElementById('note').value = parts[1] || "";
+        } else {
+            document.getElementById('debtorName').value = "";
+            document.getElementById('note').value = (t.note === "-") ? "" : t.note;
+        }
+
+        // 4. Tandai index mana yang sedang di-edit
         document.getElementById('editIndex').value = i;
-        document.getElementById('saveBtn').innerText = "Update";
-        window.scrollTo(0,0);
+        document.getElementById('saveBtn').innerText = "Update Data"; // Ubah teks tombol
+        
+        // 5. Scroll otomatis ke atas agar langsung bisa edit
+        window.scrollTo({ top: 0, behavior: 'smooth' });
     }
+    
 
     function exportToExcel() {
         const data = transactions.map(t => ({ Tanggal: t.date, Tipe: t.type, Kat: t.category, Dompet: t.wallet, Nominal: t.amount, Ket: t.note }));
