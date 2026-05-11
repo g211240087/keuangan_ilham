@@ -235,9 +235,7 @@ table td:last-child {
     // --- LOGIKA OTOMATIS PINJAM/HUTANG ---
     // Jika kategori mengandung kata 'Pinjam' atau 'Hutang', 
     // arahkan otomatis ke dompet 'Pinjam/Hutang'
-    if (category.toLowerCase().includes("pinjam") || category.toLowerCase().includes("hutang")) {
-        wallet = "Pinjam/Hutang";
-    }
+ 
 
     const noteInput = document.getElementById('note').value;
     const debtorInput = document.getElementById('debtorName').value;
@@ -377,15 +375,26 @@ table td:last-child {
         tbody.innerHTML = '';
 
         sorted.forEach((t) => {
+        // --- 1. HITUNG SALDO DOMPET ASLI ---
             if (t.type === 'income') {
                 wStats[t.wallet].in += t.amount;
                 totalInc += t.amount;
                 if(cats.hasOwnProperty(t.category)) cats[t.category] += t.amount;
                 if(t.category === "Jual Kuota") cats.KuotaIn += t.amount;
+                
+                // LOGIKA TAMBAHAN: Jika ada orang bayar hutang ke kita, angka catatan piutang berkurang
+                if (t.category === "Bayar Hutang") {
+                    wStats["Pinjam/Hutang"].in += t.amount;
+                }
             } else {
                 wStats[t.wallet].out += t.amount;
                 totalExp += t.amount;
                 if(t.category === "Jual Kuota") cats.KuotaOut += t.amount;
+
+                // LOGIKA TAMBAHAN: Jika kita pinjamkan uang, angka catatan piutang bertambah
+                if (t.category === "Pinjamkan Uang") {
+                    wStats["Pinjam/Hutang"].out += t.amount;
+                }
             }
 
             if (t.category.toLowerCase().includes(search) || t.note.toLowerCase().includes(search) || t.wallet.toLowerCase().includes(search)) {
@@ -420,13 +429,21 @@ table td:last-child {
         document.getElementById('sumIncomeText').innerText = "Rp " + sInc.toLocaleString('id-ID');
         document.getElementById('sumExpenseText').innerText = "Rp " + sExp.toLocaleString('id-ID');
 
-        document.getElementById('walletContainer').innerHTML = WALLETS.map(w => `
+        document.getElementById('walletContainer').innerHTML = WALLETS.map(w => {
+            let displayTotal;
+            if (w === "Pinjam/Hutang") {
+                // Karena dibalik, maka Sisa Piutang = Keluar (Uang di orang) - Masuk (Sudah dibayar)
+                displayTotal = wStats[w].out - wStats[w].in;
+            } else {
+            displayTotal = wStats[w].in - wStats[w].out;
+}
+            return `
             <div class="wallet-item">
                 <b>${w}</b>
                 <span class="w-in">M: ${isHidden ? "•••" : wStats[w].in.toLocaleString('id-ID')}</span><br>
                 <span class="w-out">K: ${isHidden ? "•••" : wStats[w].out.toLocaleString('id-ID')}</span><br>
                 <span class="w-total">S: ${isHidden ? "•••" : (wStats[w].in - wStats[w].out).toLocaleString('id-ID')}</span>
-            </div>`).join('');
+            </div>`;}).join('');
 
         document.getElementById('colIncome').innerHTML = `<b>Pemasukan</b><hr>Driver: ${cats["Gaji Driver"].toLocaleString('id-ID')}<br>Buzzer: ${cats["Buzzer"].toLocaleString('id-ID')}<br>Wifi: ${cats["Bulanan Wifi"].toLocaleString('id-ID')}<br>Saku: ${cats["Uang Saku"].toLocaleString('id-ID')}`;
         document.getElementById('colBusiness').innerHTML = `<b>Bisnis Kuota</b><hr>Modal: ${cats.KuotaOut.toLocaleString('id-ID')}<br>Jual: ${cats.KuotaIn.toLocaleString('id-ID')}<br><b>Profit: ${(cats.KuotaIn - cats.KuotaOut).toLocaleString('id-ID')}</b>`;
